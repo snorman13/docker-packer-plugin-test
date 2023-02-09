@@ -1,0 +1,88 @@
+name: Packer Release
+on:
+  pull_request:
+    types: [closed]
+
+env:
+  HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+  HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
+  HCP_ORGANIZATION_ID: ${{ secrets.HCP_ORGANIZATION_ID }}
+  HCP_PROJECT_ID: ${{ secrets.HCP_PROJECT_ID }}
+  GITHUB_TOKEN: ${{ secrets.SVC_TOKEN }}
+  GH_TOKEN: ${{ secrets.SVC_TOKEN }}
+  COMMIT_SHA: ${{ github.sha }}
+  REPO_NAME: ${{ github.repository }}
+  AWS_DEFAULT_REGION: us-west-2
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.SVC_TOKEN }}
+
+jobs:
+  release:
+    if: (github.event.pull_request.merged == true) && (github.actor!= 'dependabot[bot]') && (contains(github.head_ref, 'dependabot/github_actions/') == false) && (contains(github.head_ref, 'skip-release/') == false) && (contains(github.repository, 'devops-packer-template') == false)
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      name: checkout
+      with:
+        fetch-depth: 0
+
+    - name: download plugin
+      run: |
+        gh release download --repo HylandSoftware/packer-plugin-hyland --pattern '*_linux_amd64.tar.gz' --dir $HOME/.packer.d/plugins
+        tar -xzf $HOME/.packer.d/plugins/*_linux_amd64.tar.gz -C $HOME/.packer.d/plugins/ packer-plugin-hyland
+        rm $HOME/.packer.d/plugins/*_linux_amd64.tar.gz
+
+    - run: packer init .
+
+    - name: Determine tag
+      id: new_tag
+      run: echo "::set-output name=new_tag::${COMMIT_SHA:0:7}"
+
+    - name: Public IP
+      id: ip
+      uses: haythem/public-ip@v1.3
+
+    - name: Determine bucket name
+      id: bucket_name
+      run: |
+        repo=$(echo ${REPO_NAME} | awk -F/ '{print $NF}' | awk -F'packer-' '{print $2}')
+        echo "::set-output name=bucket_name::$repo"
+
+    - if: (github.base_ref == 'develop')
+      name: packer build staging
+      id: build_staging
+      run: packer build -color=false -on-error=abort -var version=${{ steps.new_tag.outputs.new_tag }} -var source_ip=${{ steps.ip.outputs.ipv4 }} -var is_prod=false -var bucket_name=${{ steps.bucket_name.outputs.bucket_name }} .
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.STAG_AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.STAG_AWS_SECRET_ACCESS_KEY }}
+
+    - if: (github.base_ref == 'main')
+      name: packer build production
+      id: build_production
+      run: packer build -color=false -on-error=abort -var version=${{ steps.new_tag.outputs.new_tag }} -var source_ip=${{ steps.ip.outputs.ipv4 }} -var is_prod=true -var bucket_name=${{ steps.bucket_name.outputs.bucket_name }} .
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+
+    - name: Create a GitHub release
+      uses: ncipollo/release-action@v1
+      with:
+        prerelease: ${{(github.base_ref == 'develop')}}
+        tag: ${{ steps.new_tag.outputs.new_tag }}
+        name: Build ${{ steps.new_tag.outputs.new_tag }}
+        generateReleaseNotes: true
+
+    - if: (github.base_ref == 'develop') && (steps.build_staging.outcome == 'success')
+      uses: ehassett/hcp-packer-action@main
+      name: release staging
+      with:
+        channel: staging
+        bucket: ${{ steps.bucket_name.outputs.bucket_name }}
+
+    - if: (github.base_ref == 'main') && (steps.build_production.outcome == 'success')
+      uses: ehassett/hcp-packer-action@main
+      name: release production
+      with:
+        channel: production
+        bucket: ${{ steps.bucket_name.outputs.bucket_name }}

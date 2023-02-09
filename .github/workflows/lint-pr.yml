@@ -1,0 +1,37 @@
+name: Lint PR
+on:
+  pull_request:
+    types: [assigned, opened, edited, synchronize, reopened]
+
+jobs:
+  commit:
+    if: (github.actor!= 'dependabot[bot]') && (contains(github.head_ref, 'dependabot/github_actions/') == false)
+    name: Lint Commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v5
+
+  title:
+    if: (github.actor!= 'dependabot[bot]') && (contains(github.head_ref, 'dependabot/github_actions/') == false)
+    name: Lint PR Title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  base_branch:
+    if: (github.actor!= 'dependabot[bot]') && (contains(github.head_ref, 'dependabot/github_actions/') == false) && (contains(github.head_ref, 'feat/') == true) && (contains(github.repository, 'devops-packer-template') == false)
+    name: Lint Base Branch
+    runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - run: |
+          if [[ ${BASE_REF} != *"develop"* ]]; then
+            echo "ERROR: Feature branches must be merged to develop."
+            exit 1
+          fi

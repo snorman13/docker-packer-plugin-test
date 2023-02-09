@@ -1,0 +1,55 @@
+name: Packer CI
+on:
+  pull_request:
+    types: [assigned, opened, edited, synchronize, reopened]
+  workflow_dispatch:
+    inputs: {}
+
+env:
+  GITHUB_TOKEN: ${{ secrets.SVC_TOKEN }}
+  GH_TOKEN: ${{ secrets.SVC_TOKEN }}
+  HEAD_REF: ${{ github.head_ref }}
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.SVC_TOKEN }}
+
+jobs:
+  fmt:
+    name: packer fmt
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      name: checkout
+      with:
+        fetch-depth: 0
+
+    - run: packer init .
+
+    - name: packer fmt
+      run: |
+        format=$(packer fmt -check .)
+        if [[ -z "$format" ]]; then
+          exit 0
+        else
+          echo "The following files are not formatted properly:"
+          echo "$format"
+          exit 1
+        fi
+
+  validate:
+    name: packer validate
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      name: checkout
+      with:
+        fetch-depth: 0
+
+    - name: download plugin
+      run: |
+        gh release download --repo HylandSoftware/packer-plugin-hyland --pattern '*_linux_amd64.tar.gz' --dir $HOME/.packer.d/plugins
+        tar -xzf $HOME/.packer.d/plugins/*_linux_amd64.tar.gz -C $HOME/.packer.d/plugins/ packer-plugin-hyland
+        rm $HOME/.packer.d/plugins/*_linux_amd64.tar.gz
+
+    - run: packer init .
+
+    - name: packer validate
+      run: packer validate -var version=test -var source_ip=0.0.0.0 -var is_prod=true -var bucket_name=test .
