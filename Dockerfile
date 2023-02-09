@@ -3,6 +3,8 @@ FROM ubuntu:latest
 
 # Install.
 RUN \
+    --mount=type=secret,id=github_token \
+    cat /run/secrets/github_token \
     sed -i 's/# \(.*multiverse$\)/\1/g' /etc/apt/sources.list && \
     apt-get update && \
     apt-get -y upgrade && \
