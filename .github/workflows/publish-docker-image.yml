@@ -3,7 +3,7 @@ name: Create and publish a Docker image
 on:
   push:
     pull_request:
-      types: [ closed ]
+      types: [merged]
 
 env:
   REGISTRY: ghcr.io
