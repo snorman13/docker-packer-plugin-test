@@ -1,0 +1,39 @@
+name: Sync with Template
+on:
+  schedule:
+    - cron: '5 8 * * *' # Runs on Daily at 8:05
+  workflow_dispatch:
+    inputs: {}
+
+jobs:
+  sync:
+    name: Sync with Template
+    runs-on: ubuntu-latest
+    env:
+      BASE_REPOSITORY: HylandSoftware/devops-packer-template
+      SYNC_LIST: 'commitlint.config.js .github scripts'
+      COMMIT_MESSAGE: 'chore: sync files with base repo'
+      PR_TITLE: 'chore: sync files with base repo'
+      BRANCH_NAME: skip-release/sync-with-template
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+        name: Checkout base repository
+        with:
+          token: ${{ secrets.SVC_TOKEN }}
+          repository: ${{ env.BASE_REPOSITORY }}
+          path: ./base_repository
+          fetch-depth: 0
+
+      - uses: actions/checkout@v3
+        name: Checkout target repository
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          path: ./target_repository
+          fetch-depth: 0
+
+      - name: Sync files from base repository
+        run: |
+          chmod +x ./target_repository/.github/sync.sh
+          ./target_repository/.github/sync.sh
+        shell: bash
